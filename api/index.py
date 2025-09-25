@@ -1,38 +1,65 @@
-import json
-from http.server import BaseHTTPRequestHandler
-import urllib.parse
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+import pandas as pd
+from typing import List
 
-# Load student data from the JSON file
-def load_data():
-    with open('q-vercel-python.json', 'r') as file:
-        data = json.load(file)
-    return data
+# Create the FastAPI application
+app = FastAPI()
 
-# Handler class to process incoming requests
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        # Parse the query parameters
-        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+# Enable CORS to allow POST requests from any origin
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-        # Get 'name' parameters from the query string
-        names = query.get('name', [])
+# Load the telemetry data from the JSON file when the app starts
+try:
+    telemetry_df = pd.read_json("api/q-vercel-latency.json")
+except Exception as e:
+    print(f"Error loading data file: {e}")
+    telemetry_df = pd.DataFrame() # Create an empty DataFrame if the file is missing
 
-        # Load data from the JSON file
-        data = load_data()
+@app.post("/")
+async def get_latency_stats(request: Request):
+    """
+    This endpoint calculates latency and uptime statistics for specified regions.
+    """
+    if telemetry_df.empty:
+        return {"error": "Server is missing the telemetry data file."}, 500
 
-        # Prepare the result dictionary
-        result = {"marks": []}
-        for name in names:
-            # Find the marks for each name
-            for entry in data:
-                if entry["name"] == name:
-                    result["marks"].append(entry["marks"])
+    # Get the JSON body from the incoming POST request
+    request_data = await request.json()
+    regions_to_process = request_data.get("regions", [])
+    threshold = request_data.get("threshold_ms", 0)
 
-        # Send the response header
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')  # Enable CORS for any origin
-        self.end_headers()
+    response_data = []
 
-        # Send the JSON response
-        self.wfile.write(json.dumps(result).encode('utf-8'))
+    # Process each region requested in the JSON body
+    for region in regions_to_process:
+        # Filter the main DataFrame to get only the data for the current region
+        region_df = telemetry_df[telemetry_df['region'] == region]
+
+        if not region_df.empty:
+            # Calculate all the required metrics using pandas
+            avg_latency = round(region_df['latency_ms'].mean(), 2)
+            p95_latency = round(region_df['latency_ms'].quantile(0.95), 2)
+            avg_uptime = round(region_df['uptime_pct'].mean(), 3)
+            breaches = int((region_df['latency_ms'] > threshold).sum())
+
+            response_data.append({
+                "region": region,
+                "avg_latency": avg_latency,
+                "p95_latency": p95_latency,
+                "avg_uptime": avg_uptime,
+                "breaches": breaches,
+            })
+
+    return {"regions": response_data}
+
+@app.get("/")
+async def root():
+    # A simple GET endpoint to confirm the server is running
+    return {"message": "API is running. Use a POST request to get statistics."}
