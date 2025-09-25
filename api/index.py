@@ -2,12 +2,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 from typing import List
+import os # --- NEW: Import the os module ---
 
 # Create the FastAPI application
 app = FastAPI()
 
-# --- IMPORTANT: This is the CORS configuration ---
-# It allows requests from any origin, which is required by the quiz.
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,21 +16,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load the telemetry data from the JSON file when the app starts
+# --- CHANGED: Use an absolute path to the data file ---
+# Get the directory where this script is located
+base_dir = os.path.dirname(__file__)
+# Join the directory path with the filename
+file_path = os.path.join(base_dir, "q-vercel-latency.json")
+
 try:
-    telemetry_df = pd.read_json("api/q-vercel-latency.json")
+    telemetry_df = pd.read_json(file_path)
 except Exception as e:
-    print(f"Error loading data file: {e}")
+    print(f"Error loading data file from {file_path}: {e}")
     telemetry_df = pd.DataFrame()
 
 @app.post("/")
 async def get_latency_stats(request: Request):
-    """
-    This is the main endpoint that accepts a POST request,
-    calculates statistics, and returns the result.
-    """
     if telemetry_df.empty:
-        return {"error": "Server is missing the telemetry data file."}, 500
+        return {"error": f"Server could not load data file from path: {file_path}"}, 500
 
     request_data = await request.json()
     regions_to_process = request_data.get("regions", [])
@@ -59,7 +60,4 @@ async def get_latency_stats(request: Request):
 
 @app.get("/")
 async def root():
-    """
-    A simple GET endpoint to confirm the server is running.
-    """
     return {"message": "API is running. Use a POST request to get statistics."}
