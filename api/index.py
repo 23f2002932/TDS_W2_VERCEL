@@ -1,27 +1,25 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import pandas as pd
-from typing import List
-import os # --- NEW: Import the os module ---
+import os
 
-# Create the FastAPI application
 app = FastAPI()
 
-# Enable CORS
+# Enable CORS for POST requests from any origin
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all origins
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["POST"],  # Restrict to POST as per requirements
     allow_headers=["*"],
 )
 
-# --- CHANGED: Use an absolute path to the data file ---
-# Get the directory where this script is located
+# Resolve path to telemetry JSON file
 base_dir = os.path.dirname(__file__)
-# Join the directory path with the filename
 file_path = os.path.join(base_dir, "q-vercel-latency.json")
 
+# Load telemetry data once at startup (handle errors)
 try:
     telemetry_df = pd.read_json(file_path)
 except Exception as e:
@@ -31,7 +29,10 @@ except Exception as e:
 @app.post("/")
 async def get_latency_stats(request: Request):
     if telemetry_df.empty:
-        return {"error": f"Server could not load data file from path: {file_path}"}, 500
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Server could not load data file from path: {file_path}"}
+        )
 
     request_data = await request.json()
     regions_to_process = request_data.get("regions", [])
