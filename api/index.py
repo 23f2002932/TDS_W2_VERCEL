@@ -11,13 +11,14 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["*"], # Allows all methods, including POST
     allow_headers=["*"],
 )
 
 # Load the telemetry data from the JSON file when the app starts
 try:
-    telemetry_df = pd.read_json("api/q-vercel-latency.json")
+    # Vercel runs the script from the 'api' directory, so the path is relative to it
+    telemetry_df = pd.read_json("q-vercel-latency.json")
 except Exception as e:
     print(f"Error loading data file: {e}")
     telemetry_df = pd.DataFrame() # Create an empty DataFrame if the file is missing
